@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:todoapp/Auth/authservice.dart';
 import 'package:todoapp/screens/addtaskpage.dart';
@@ -11,18 +12,19 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
 
-  List<String> _tasks = [];
-
-  void _addTask(String task) {
-    setState(() {
-      _tasks.add(task);
-    });
+  Future<void> _addTask(String task) async {
+    final user = AuthService().currentUser; // Get current user
+    if (user != null) {
+      await FirebaseFirestore.instance.collection('tasks').add({
+        'task': task,
+        'userId': user.uid,
+        'createdAt': DateTime.now(),
+      });
+    }
   }
 
-  void _removeTask(int index) {
-    setState(() {
-      _tasks.removeAt(index);
-    });
+  void _removeTask(String taskId) async {
+    await FirebaseFirestore.instance.collection('tasks').doc(taskId).delete();
   }
 
   void _logout() async {
@@ -45,24 +47,32 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
 
+      body: StreamBuilder(
+        stream: FirebaseFirestore.instance.collection('tasks').snapshots(), // Stream of tasks from Firestore
+        builder: (context, AsyncSnapshot<QuerySnapshot> snapshot) {
+          if (snapshot.hasError) {
+            return Text('Error: ${snapshot.error}');
+          }
 
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CircularProgressIndicator());
+          }
 
-      body: ListView.builder(
-        itemCount: _tasks.length,
-        itemBuilder: (context, index) {
-          return ListTile(
-            title: Text(_tasks[index]),
-            trailing: IconButton(
-              icon: Icon(Icons.delete),
-              onPressed: () {
-                _removeTask(index);
-              },
-            ),
+          return ListView(
+            children: snapshot.data!.docs.map((DocumentSnapshot document) {
+              final data = document.data() as Map<String, dynamic>;
+              return ListTile(
+                title: Text(data['task']),
+                trailing: IconButton(
+                  icon: Icon(Icons.delete),
+                  onPressed: () => _removeTask(document.id),
+                ),
+              );
+            }).toList(),
           );
         },
       ),
 
-      
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           final newTask = await Navigator.push(
